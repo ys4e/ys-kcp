@@ -1,0 +1,27 @@
+[package]
+name = "ys-kcp"
+version = "0.4.12"
+authors = ["Matrix <113445886@qq.com>", "Y. T. Chung <zonyitoo@gmail.com>"]
+description = "Reliable-UDP Library for Rust"
+license = "MIT"
+readme = "README.md"
+keywords = ["kcp", "udp", "reliable"]
+edition = "2018"
+
+[lib]
+name = "kcp"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+tokio = ["dep:tokio"]
+
+[dependencies]
+bytes = "1.0"
+log = "0.4"
+xxhash-rust = { version = "0.8.10", features = ["xxh3"] }
+tokio = { version = "1.43", optional = true, features = ["io-util"] }
+
+[dev-dependencies]
+time = "0.2"
+rand = "0.8"
+env_logger = "0.8"
