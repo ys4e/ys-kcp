@@ -2,6 +2,8 @@
 //!
 //! A Fast and Reliable ARQ Protocol
 
+#![feature(stmt_expr_attributes)]
+
 extern crate bytes;
 #[macro_use]
 extern crate log;

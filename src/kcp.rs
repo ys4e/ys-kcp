@@ -3,11 +3,13 @@
 use std::cmp;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::io::{self, Cursor, Read, Write};
 
 use bytes::{Buf, BufMut, BytesMut};
 use crate::{KcpResult, error::Error};
+
+#[cfg(feature = "byte-check")]
+use std::convert::TryInto;
 
 #[cfg(feature = "tokio")]
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -38,7 +40,12 @@ pub const KCP_MTU_DEF: usize = 1400;
 const KCP_INTERVAL: u32 = 100;
 //pub const KCP_OVERHEAD: usize = 24;
 //pub const KCP_OVERHEAD: usize = 28;
+
+#[cfg(feature = "byte-check")]
 pub const KCP_OVERHEAD: usize = 32;
+#[cfg(not(feature = "byte-check"))]
+pub const KCP_OVERHEAD: usize = 28;
+
 const KCP_DEADLINK: u32 = 20;
 
 const KCP_THRESH_INIT: u16 = 2;
@@ -60,6 +67,7 @@ pub fn set_conv(mut buf: &mut [u8], conv: u32) {
 }
 
 #[inline]
+#[cfg(feature = "byte-check")]
 fn compute_hash(data: &[u8]) -> u32 {
     let hash = xxhash_rust::xxh3::xxh3_64(data);
     match (hash & 0xFFFFFFFF).try_into() {
@@ -92,7 +100,10 @@ struct KcpSegment {
     rto: u32,
     fastack: u32,
     xmit: u32,
+    
+    #[cfg(feature = "byte-check")]
     byte_check_code: u32,
+    
     data: BytesMut,
 }
 
@@ -111,7 +122,10 @@ impl KcpSegment {
             rto: 0,
             fastack: 0,
             xmit: 0,
+            
+            #[cfg(feature = "byte-check")]
             byte_check_code: 0,
+            
             data,
         }
     }
@@ -136,6 +150,7 @@ impl KcpSegment {
         buf.put_u32_le(self.una);
         buf.put_u32_le(self.data.len() as u32);
         // BEG PATCH: miHoYo proprietary
+        #[cfg(feature = "byte-check")]
         buf.put_u32_le(self.byte_check_code);
         // END PATCH: miHoYo proprietary
         buf.put_slice(&self.data);
@@ -683,6 +698,8 @@ impl<Output> Kcp<Output> {
             let sn = buf.get_u32_le();
             let una = buf.get_u32_le();
             let len = buf.get_u32_le() as usize;
+
+            #[cfg(feature = "byte-check")]
             let byte_check_code = buf.get_u32_le();
 
             if buf.remaining() < len as usize {
@@ -760,7 +777,11 @@ impl<Output> Kcp<Output> {
                             segment.ts = ts;
                             segment.sn = sn;
                             segment.una = una;
-                            segment.byte_check_code = byte_check_code;
+
+                            #[cfg(feature = "byte-check")]
+                            {
+                                segment.byte_check_code = byte_check_code;
+                            }
 
                             self.parse_data(segment);
                         }
@@ -1109,7 +1130,12 @@ impl<Output: Write> Kcp<Output> {
                     new_segment.rto = self.rx_rto;
                     new_segment.fastack = 0;
                     new_segment.xmit = 0;
-                    new_segment.byte_check_code = compute_hash(&new_segment.data);
+
+                    #[cfg(feature = "byte-check")]
+                    {
+                        new_segment.byte_check_code = compute_hash(&new_segment.data);
+                    }
+                    
                     self.snd_buf.push_back(new_segment);
                 }
                 None => break,
@@ -1349,7 +1375,12 @@ impl<Output: AsyncWrite + Unpin + Send> Kcp<Output> {
                     new_segment.rto = self.rx_rto;
                     new_segment.fastack = 0;
                     new_segment.xmit = 0;
-                    new_segment.byte_check_code = compute_hash(&new_segment.data);
+                    
+                    #[cfg(feature = "byte-check")]
+                    {
+                        new_segment.byte_check_code = compute_hash(&new_segment.data);
+                    }
+                    
                     self.snd_buf.push_back(new_segment);
                 }
                 None => break,

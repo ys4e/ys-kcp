@@ -14,11 +14,12 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 tokio = ["dep:tokio"]
+byte-check = ["dep:xxhash-rust"]
 
 [dependencies]
 bytes = "1.0"
 log = "0.4"
-xxhash-rust = { version = "0.8.10", features = ["xxh3"] }
+xxhash-rust = { version = "0.8.10", optional = true, features = ["xxh3"] }
 tokio = { version = "1.43", optional = true, features = ["io-util"] }
 
 [dev-dependencies]
