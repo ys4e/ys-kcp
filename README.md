@@ -2,6 +2,11 @@
 
 Reliable-UDP Library for Rust
 
+## Features
+
+- `tokio` - Enables `tokio` support for the library, allowing it to be used in asynchronous contexts with `await`.
+- `byte-check` - Adds an arbitrary field for a packet data hash, making it conformant with anime game's KCP implementation.
+
 ## Modifications
 
 - [Changed `KCP_OVERHEAD` to `32`](https://discord.com/channels/965284035985305680/1156564998185816114/1233773942200729600)
