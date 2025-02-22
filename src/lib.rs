@@ -20,7 +20,7 @@ pub mod prelude {
 }
 
 pub use error::Error;
-pub use kcp::Kcp;
+pub use kcp::{DEFAULT_KCP_OVERHEAD, MAX_KCP_OVERHEAD, Kcp};
 
 #[cfg(not(feature = "byte-check"))]
 pub use kcp::{get_conv, set_conv};
