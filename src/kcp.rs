@@ -42,7 +42,10 @@ const KCP_INTERVAL: u32 = 100;
 //pub const KCP_OVERHEAD: usize = 28;
 
 #[cfg(feature = "byte-check")]
-pub const KCP_OVERHEAD: usize = 32;
+pub const DEFAULT_KCP_OVERHEAD: usize = 28;
+#[cfg(feature = "byte-check")]
+pub const MAX_KCP_OVERHEAD: usize = 32;
+
 #[cfg(not(feature = "byte-check"))]
 pub const KCP_OVERHEAD: usize = 28;
 
@@ -55,12 +58,14 @@ const KCP_PROBE_INIT: u32 = 7000;
 const KCP_PROBE_LIMIT: u32 = 120000;
 
 /// Read `conv` from raw buffer
+#[cfg(not(feature = "byte-check"))]
 pub fn get_conv(mut buf: &[u8]) -> u32 {
     assert!(buf.len() >= KCP_OVERHEAD);
     buf.get_u32_le()
 }
 
 /// Set `conv` to raw buffer
+#[cfg(not(feature = "byte-check"))]
 pub fn set_conv(mut buf: &mut [u8], conv: u32) {
     assert!(buf.len() >= KCP_OVERHEAD);
     buf.put_u32_le(conv)
@@ -88,6 +93,9 @@ fn timediff(later: u32, earlier: u32) -> i32 {
 
 #[derive(Default, Clone, Debug)]
 struct KcpSegment {
+    #[cfg(feature = "byte-check")]
+    overhead: usize,
+
     conv: u32,
     token: u32,
     cmd: u8,
@@ -108,6 +116,7 @@ struct KcpSegment {
 }
 
 impl KcpSegment {
+    #[cfg(not(feature = "byte-check"))]
     fn new_with_data(data: BytesMut) -> Self {
         KcpSegment {
             conv: 0,
@@ -130,12 +139,49 @@ impl KcpSegment {
         }
     }
 
+    #[cfg(feature = "byte-check")]
+    fn new_with_data(data: BytesMut, overhead: usize) -> Self {
+        KcpSegment {
+            overhead,
+
+            conv: 0,
+            token: 0,
+            cmd: 0,
+            frg: 0,
+            wnd: 0,
+            ts: 0,
+            sn: 0,
+            una: 0,
+            resendts: 0,
+            rto: 0,
+            fastack: 0,
+            xmit: 0,
+
+            #[cfg(feature = "byte-check")]
+            byte_check_code: 0,
+
+            data,
+        }
+    }
+
     fn encode(&self, buf: &mut BytesMut) {
-        if buf.remaining_mut() < self.encoded_len() {
+        let overhead = {
+            #[cfg(feature = "byte-check")]
+            {
+                self.overhead
+            }
+
+            #[cfg(not(feature = "byte-check"))]
+            {
+                KCP_OVERHEAD
+            }
+        };
+
+        if buf.remaining_mut() < overhead {
             panic!(
                 "REMAIN {} encoded {} {:?}",
                 buf.remaining_mut(),
-                self.encoded_len(),
+                overhead,
                 self
             );
         }
@@ -151,13 +197,21 @@ impl KcpSegment {
         buf.put_u32_le(self.data.len() as u32);
         // BEG PATCH: miHoYo proprietary
         #[cfg(feature = "byte-check")]
-        buf.put_u32_le(self.byte_check_code);
+        if self.overhead > DEFAULT_KCP_OVERHEAD {
+            buf.put_u32_le(self.byte_check_code);
+        }
         // END PATCH: miHoYo proprietary
         buf.put_slice(&self.data);
     }
 
+    #[cfg(not(feature = "byte-check"))]
     fn encoded_len(&self) -> usize {
         KCP_OVERHEAD + self.data.len()
+    }
+
+    #[cfg(feature = "byte-check")]
+    fn encoded_len(&self) -> usize {
+        self.overhead + self.data.len()
     }
 }
 
@@ -211,6 +265,9 @@ impl<O: AsyncWrite + Unpin> AsyncWrite for KcpOutput<O> {
 /// KCP control
 #[derive(Default)]
 pub struct Kcp<Output> {
+    #[cfg(feature = "byte-check")]
+    overhead: usize,
+
     /// Conversation ID
     conv: u32,
     /// Maximun Transmission Unit
@@ -317,6 +374,7 @@ impl<Output> Kcp<Output> {
         Kcp::construct(conv, token, output, true)
     }
 
+    #[cfg(not(feature = "byte-check"))]
     fn construct(conv: u32, token: u32, output: Output, stream: bool) -> Self {
         Kcp {
             conv,
@@ -346,6 +404,52 @@ impl<Output> Kcp<Output> {
             mtu: KCP_MTU_DEF,
             mss: (KCP_MTU_DEF - KCP_OVERHEAD) as u32,
             buf: BytesMut::with_capacity((KCP_MTU_DEF + KCP_OVERHEAD) * 3),
+            snd_queue: VecDeque::new(),
+            rcv_queue: VecDeque::new(),
+            snd_buf: VecDeque::new(),
+            rcv_buf: VecDeque::new(),
+            acklist: VecDeque::new(),
+            rx_rto: KCP_RTO_DEF,
+            rx_minrto: KCP_RTO_MIN,
+            interval: KCP_INTERVAL,
+            ts_flush: KCP_INTERVAL,
+            ssthresh: KCP_THRESH_INIT,
+            input_conv: false,
+            output: KcpOutput(output),
+        }
+    }
+
+    #[cfg(feature = "byte-check")]
+    fn construct(conv: u32, token: u32, output: Output, stream: bool) -> Self {
+        Kcp {
+            overhead: DEFAULT_KCP_OVERHEAD,
+            conv,
+            snd_una: 0,
+            snd_nxt: 0,
+            rcv_nxt: 0,
+            token,
+            rx_rttval: 0,
+            rx_srtt: 0,
+            state: 0,
+            cwnd: 0,
+            probe: 0,
+            current: 0,
+            xmit: 0,
+            nodelay: false,
+            updated: false,
+            ts_probe: 0,
+            probe_wait: 0,
+            dead_link: KCP_DEADLINK,
+            incr: 0,
+            fastresend: 0,
+            nocwnd: false,
+            stream,
+            snd_wnd: KCP_WND_SND,
+            rcv_wnd: KCP_WND_RCV,
+            rmt_wnd: KCP_WND_RCV,
+            mtu: KCP_MTU_DEF,
+            mss: (KCP_MTU_DEF - DEFAULT_KCP_OVERHEAD) as u32,
+            buf: BytesMut::with_capacity((KCP_MTU_DEF + MAX_KCP_OVERHEAD) * 3),
             snd_queue: VecDeque::new(),
             rcv_queue: VecDeque::new(),
             snd_buf: VecDeque::new(),
@@ -498,9 +602,19 @@ impl<Output> Kcp<Output> {
         for i in 0..count {
             let size = cmp::min(self.mss as usize, buf.len());
 
-            let (lf, rt) = buf.split_at(size);
+            let (_, rt) = buf.split_at(size);
 
-            let mut new_segment = KcpSegment::new_with_data(lf.into());
+            let mut new_segment = {
+                #[cfg(feature = "byte-check")]
+                {
+                    KcpSegment::new_with_data(BytesMut::with_capacity(size), self.overhead)
+                }
+
+                #[cfg(not(feature = "byte-check"))]
+                {
+                    KcpSegment::new_with_data(BytesMut::with_capacity(size))
+                }
+            };
             buf = rt;
 
             new_segment.frg = if self.stream {
@@ -660,11 +774,11 @@ impl<Output> Kcp<Output> {
 
         trace!("[RI] {} bytes", buf.len());
 
-        if buf.len() < KCP_OVERHEAD {
+        if buf.len() < self.header_len() {
             debug!(
                 "input bufsize={} too small, at least {}",
                 buf.len(),
-                KCP_OVERHEAD
+                self.header_len()
             );
             return Err(Error::InvalidSegmentSize(buf.len()));
         }
@@ -674,7 +788,7 @@ impl<Output> Kcp<Output> {
         let old_una = self.snd_una;
 
         let mut buf = Cursor::new(buf);
-        while buf.remaining() >= KCP_OVERHEAD as usize {
+        while buf.remaining() >= self.header_len() as usize {
             let conv = buf.get_u32_le();
             if conv != self.conv {
                 // This allows getting conv from this call, which allows us to allocate
@@ -700,7 +814,11 @@ impl<Output> Kcp<Output> {
             let len = buf.get_u32_le() as usize;
 
             #[cfg(feature = "byte-check")]
-            let byte_check_code = buf.get_u32_le();
+            let byte_check_code = if self.overhead > DEFAULT_KCP_OVERHEAD {
+                buf.get_u32_le()
+            } else {
+                0
+            };
 
             if buf.remaining() < len as usize {
                 debug!(
@@ -767,7 +885,17 @@ impl<Output> Kcp<Output> {
                             buf.read_exact(&mut sbuf).unwrap();
                             has_read_data = true;
 
-                            let mut segment = KcpSegment::new_with_data(sbuf);
+                            let mut segment = {
+                                #[cfg(feature = "byte-check")]
+                                {
+                                    KcpSegment::new_with_data(sbuf, self.overhead)
+                                }
+
+                                #[cfg(not(feature = "byte-check"))]
+                                {
+                                    KcpSegment::new_with_data(sbuf)
+                                }
+                            };
 
                             segment.conv = conv;
                             segment.token = token;
@@ -902,15 +1030,15 @@ impl<Output> Kcp<Output> {
     ///
     /// MTU = Maximum Transmission Unit
     pub fn set_mtu(&mut self, mtu: usize) -> KcpResult<()> {
-        if mtu < 50 || mtu < KCP_OVERHEAD {
+        if mtu < 50 || mtu < self.header_len() {
             debug!("set_mtu mtu={} invalid", mtu);
             return Err(Error::InvalidMtu(mtu));
         }
 
         self.mtu = mtu;
-        self.mss = (self.mtu - KCP_OVERHEAD) as u32;
+        self.mss = (self.mtu - self.header_len()) as u32;
 
-        let additional = ((mtu + KCP_OVERHEAD) * 3) as isize - self.buf.capacity() as isize;
+        let additional = ((mtu + self.header_len()) * 3) as isize - self.buf.capacity() as isize;
         if additional > 0 {
             self.buf.reserve(additional as usize);
         }
@@ -1001,8 +1129,24 @@ impl<Output> Kcp<Output> {
     }
 
     /// KCP header size
-    pub fn header_len() -> usize {
+    #[cfg(not(feature = "byte-check"))]
+    pub fn header_len(&self) -> usize {
         KCP_OVERHEAD as usize
+    }
+
+    /// KCP header size
+    #[cfg(feature = "byte-check")]
+    pub fn header_len(&self) -> usize {
+        self.overhead
+    }
+
+    /// Sets the KCP instance's overhead/header length.
+    #[cfg(feature = "byte-check")]
+    pub fn set_header_len(&mut self, overhead: usize) {
+        self.overhead = overhead;
+
+        // Update the maximum segment size which is dependent on the overhead
+        self.mss = (KCP_MTU_DEF - overhead) as u32;
     }
 
     /// Enabled stream or not
@@ -1031,7 +1175,7 @@ impl<Output: Write> Kcp<Output> {
         // flush acknowledges
         // while let Some((sn, ts)) = self.acklist.pop_front() {
         for &(sn, ts) in &self.acklist {
-            if self.buf.len() + KCP_OVERHEAD > self.mtu as usize {
+            if self.buf.len() + self.header_len() > self.mtu as usize {
                 self.output.write_all(&self.buf)?;
                 self.buf.clear();
             }
@@ -1046,7 +1190,7 @@ impl<Output: Write> Kcp<Output> {
 
     fn _flush_probe_commands(&mut self, cmd: u8, segment: &mut KcpSegment) -> KcpResult<()> {
         segment.cmd = cmd;
-        if self.buf.len() + KCP_OVERHEAD > self.mtu as usize {
+        if self.buf.len() + self.header_len() > self.mtu as usize {
             self.output.write_all(&self.buf)?;
             self.buf.clear();
         }
@@ -1186,7 +1330,18 @@ impl<Output: Write> Kcp<Output> {
                 snd_segment.wnd = segment.wnd;
                 snd_segment.una = self.rcv_nxt;
 
-                let need = KCP_OVERHEAD + snd_segment.data.len();
+                let overhead = {
+                    #[cfg(feature = "byte-check")]
+                    {
+                        self.overhead
+                    }
+
+                    #[cfg(not(feature = "byte-check"))]
+                    {
+                        KCP_OVERHEAD
+                    }
+                };
+                let need = overhead + snd_segment.data.len();
 
                 if self.buf.len() + need > self.mtu as usize {
                     self.output.write_all(&self.buf)?;
@@ -1271,7 +1426,7 @@ impl<Output: AsyncWrite + Unpin + Send> Kcp<Output> {
         // flush acknowledges
         // while let Some((sn, ts)) = self.acklist.pop_front() {
         for &(sn, ts) in &self.acklist {
-            if self.buf.len() + KCP_OVERHEAD > self.mtu {
+            if self.buf.len() + self.header_len() > self.mtu {
                 self.output.write_all(&self.buf).await?;
                 self.buf.clear();
             }
@@ -1290,7 +1445,7 @@ impl<Output: AsyncWrite + Unpin + Send> Kcp<Output> {
         segment: &mut KcpSegment,
     ) -> KcpResult<()> {
         segment.cmd = cmd;
-        if self.buf.len() + KCP_OVERHEAD > self.mtu {
+        if self.buf.len() + self.header_len() > self.mtu {
             self.output.write_all(&self.buf).await?;
             self.buf.clear();
         }
@@ -1432,7 +1587,7 @@ impl<Output: AsyncWrite + Unpin + Send> Kcp<Output> {
                 snd_segment.wnd = segment.wnd;
                 snd_segment.una = self.rcv_nxt;
 
-                let need = KCP_OVERHEAD + snd_segment.data.len();
+                let need = self.header_len() + snd_segment.data.len();
 
                 if self.buf.len() + need > self.mtu {
                     self.output.write_all(&self.buf).await?;
