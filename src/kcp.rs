@@ -1587,7 +1587,18 @@ impl<Output: AsyncWrite + Unpin + Send> Kcp<Output> {
                 snd_segment.wnd = segment.wnd;
                 snd_segment.una = self.rcv_nxt;
 
-                let need = self.header_len() + snd_segment.data.len();
+                let overhead = {
+                    #[cfg(feature = "byte-check")]
+                    {
+                        self.overhead
+                    }
+
+                    #[cfg(not(feature = "byte-check"))]
+                    {
+                        KCP_OVERHEAD
+                    }
+                };
+                let need = overhead + snd_segment.data.len();
 
                 if self.buf.len() + need > self.mtu {
                     self.output.write_all(&self.buf).await?;
