@@ -58,17 +58,15 @@ const KCP_PROBE_INIT: u32 = 7000;
 const KCP_PROBE_LIMIT: u32 = 120000;
 
 /// Read `conv` from raw buffer
-#[cfg(not(feature = "byte-check"))]
-pub fn get_conv(mut buf: &[u8]) -> u32 {
-    assert!(buf.len() >= KCP_OVERHEAD);
-    buf.get_u32_le()
+pub fn get_conv(buf: &[u8]) -> u32 {
+    assert!(buf.len() >= DEFAULT_KCP_OVERHEAD);
+    u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]])
 }
 
-/// Set `conv` to raw buffer
-#[cfg(not(feature = "byte-check"))]
-pub fn set_conv(mut buf: &mut [u8], conv: u32) {
-    assert!(buf.len() >= KCP_OVERHEAD);
-    buf.put_u32_le(conv)
+/// Read `token` from raw buffer
+pub fn get_token(buf: &[u8]) -> u32 {
+    assert!(buf.len() >= DEFAULT_KCP_OVERHEAD);
+    u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]])
 }
 
 #[inline]

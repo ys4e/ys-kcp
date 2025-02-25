@@ -14,16 +14,11 @@ mod kcp;
 /// The `KCP` prelude
 pub mod prelude {
     pub use super::Kcp;
-
-    #[cfg(not(feature = "byte-check"))]
     pub use super::get_conv;
 }
 
 pub use error::Error;
-pub use kcp::{DEFAULT_KCP_OVERHEAD, MAX_KCP_OVERHEAD, Kcp};
-
-#[cfg(not(feature = "byte-check"))]
-pub use kcp::{get_conv, set_conv};
+pub use kcp::{DEFAULT_KCP_OVERHEAD, MAX_KCP_OVERHEAD, Kcp, get_conv, get_token};
 
 /// KCP result
 pub type KcpResult<T> = Result<T, Error>;
