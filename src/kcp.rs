@@ -71,7 +71,7 @@ pub fn get_token(buf: &[u8]) -> u32 {
 
 #[inline]
 #[cfg(feature = "byte-check")]
-fn compute_hash(data: &[u8]) -> u32 {
+pub fn compute_hash(data: &[u8]) -> u32 {
     let hash = xxhash_rust::xxh3::xxh3_64(data);
     match (hash & 0xFFFFFFFF).try_into() {
         Ok(v) => v,

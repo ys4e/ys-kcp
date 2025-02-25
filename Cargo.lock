@@ -695,7 +695,7 @@ checksum = "927da81e25be1e1a2901d59b81b37dd2efd1fc9c9345a55007f09bf5a2d3ee03"
 
 [[package]]
 name = "ys-kcp"
-version = "1.0.0"
+version = "1.2.0"
 dependencies = [
  "bytes",
  "env_logger",

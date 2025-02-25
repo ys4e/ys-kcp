@@ -1,6 +1,6 @@
 [package]
 name = "ys-kcp"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Matrix <113445886@qq.com>", "Y. T. Chung <zonyitoo@gmail.com>"]
 description = "Reliable-UDP Library for Rust"
 license = "MIT"
