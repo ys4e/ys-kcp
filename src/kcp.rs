@@ -202,11 +202,13 @@ impl KcpSegment {
         buf.put_slice(&self.data);
     }
 
+    #[allow(dead_code)]
     #[cfg(not(feature = "byte-check"))]
     fn encoded_len(&self) -> usize {
         KCP_OVERHEAD + self.data.len()
     }
 
+    #[allow(dead_code)]
     #[cfg(feature = "byte-check")]
     fn encoded_len(&self) -> usize {
         self.overhead + self.data.len()
