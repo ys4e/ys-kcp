@@ -610,7 +610,7 @@ impl<Output> Kcp<Output> {
         for i in 0..count {
             let size = cmp::min(self.mss as usize, buf.len());
 
-            let (_, rt) = buf.split_at(size);
+            let (lf, rt) = buf.split_at(size);
 
             let mut new_segment = {
                 #[cfg(feature = "byte-check")]
@@ -623,6 +623,7 @@ impl<Output> Kcp<Output> {
                     KcpSegment::new_with_data(BytesMut::with_capacity(size))
                 }
             };
+            new_segment.data.extend_from_slice(lf);
             buf = rt;
 
             new_segment.frg = if self.stream {
